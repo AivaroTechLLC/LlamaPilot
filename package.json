@@ -1,0 +1,20 @@
+{
+  "name": "llamapilot",
+  "version": "0.1.0",
+  "description": "Local AI coding assistant — Ollama + deepseek-coder",
+  "main": "main.js",
+  "bin": {
+    "llamapilot": "./bin/llamapilot.js"
+  },
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "node-fetch": "^2.7.0"
+  },
+  "devDependencies": {
+    "electron": "^29.0.0"
+  }
+}

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';">
+  <title>LlamaPilot</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+
+  <aside id="sidebar">
+    <div id="sidebar-header">
+      <span id="workspace-label">LlamaPilot</span>
+      <span id="model-badge">deepseek-coder</span>
+    </div>
+    <div id="file-tree"></div>
+  </aside>
+
+  <main id="main">
+    <div id="chat-wrap">
+      <div id="messages"></div>
+    </div>
+
+    <div id="input-row">
+      <textarea
+        id="user-input"
+        placeholder="Ask LlamaPilot to build, fix, refactor, or explain your code…"
+        rows="3"
+        spellcheck="false"
+      ></textarea>
+      <button id="send-btn" title="Send (Ctrl+Enter)">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M2 8h12M9 2l6 6-6 6" stroke="currentColor" stroke-width="1.6"
+                stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+  </main>
+
+</div>
+
+<!-- Approval overlay -->
+<div id="approval-overlay" class="hidden">
+  <div id="approval-modal">
+    <div id="approval-kind"></div>
+    <pre id="approval-detail"></pre>
+    <div id="approval-btns">
+      <button id="btn-deny">Deny</button>
+      <button id="btn-allow">Allow</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
