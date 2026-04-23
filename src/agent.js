@@ -7,24 +7,25 @@ const runShell = require('./tools/runShell');
 const deleteFile = require('./tools/deleteFile');
 const webSearch = require('./tools/webSearch');
 
-const MAX_TURNS = 12;
+const MAX_TURNS = 16;
 const TOOL_RE = /<tool_call>([\s\S]*?)<\/tool_call>/;
 
-function buildSystem(workspace, tree) {
-  return `You are LlamaPilot — a local AI coding assistant (deepseek-coder via Ollama).
+function buildSystem(workspace, tree, model) {
+  return `You are LlamaPilot — an offline AI coding assistant powered by ${model} via Ollama.
+Your goal is to assist with code editing, debugging, and problem-solving in a local workspace.
 
 ## Workspace
 Path: ${workspace}
 ${tree}
 
-## Tools
+## Available Tools
 Output a tool call using EXACTLY this format (one per message, nothing on the same line):
 <tool_call>{"tool":"TOOL_NAME","args":{...}}</tool_call>
 
 readFile   — read a workspace file
   args: { "path": "relative/path" }
 
-writeFile  — create or overwrite a file
+writeFile  — create or overwrite a file (plan carefully before writing)
   args: { "path": "relative/path", "content": "full file content" }
 
 runShell   — run a shell command (user approval required)
@@ -33,21 +34,28 @@ runShell   — run a shell command (user approval required)
 deleteFile — delete a file (user approval required)
   args: { "path": "relative/path" }
 
-webSearch  — search for code examples / docs
+webSearch  — search for code examples / docs online
   args: { "query": "search terms" }
 
+## Best Practices
+1. Always read files BEFORE editing — understand the existing patterns and structure.
+2. Use writeFile to make all changes — do NOT just show code snippets.
+3. Explain your reasoning before and after tool calls.
+4. For multi-step tasks, break them into clear phases.
+5. Destructive operations (runShell, deleteFile) require user approval.
+6. After completing work, summarize all changes made.
+
 ## Rules
-- Read files before editing them to understand existing patterns.
-- Use writeFile to actually make changes — do not just show code snippets.
-- Explain what you are doing before and after each tool call.
-- Destructive actions (runShell, deleteFile) will show an approval dialog.
-- After completing a task, give a brief summary of all changes made.`;
+- Stay focused on the stated task.
+- Ask clarifying questions if the request is ambiguous.
+- Be concise in explanations.
+- If you hit errors, use readFile to debug and try a different approach.`;
 }
 
-async function runAgent({ messages, workspace, sendEvent }) {
+async function runAgent({ messages, workspace, sendEvent, model = 'unknown' }) {
   const tree = await getWorkspaceContext(workspace);
   const conv = [
-    { role: 'system', content: buildSystem(workspace, tree) },
+    { role: 'system', content: buildSystem(workspace, tree, model) },
     ...messages,
   ];
 

@@ -56,7 +56,8 @@ function setupListeners() {
 
   sendBtn.addEventListener('click', sendMessage);
   input.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    // Enter to submit, Shift+Enter for newline
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
     }

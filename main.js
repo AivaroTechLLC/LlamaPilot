@@ -80,6 +80,7 @@ ipcMain.on('approval-response', (_, { id, approved }) => {
 // ── IPC handlers ──────────────────────────────────────────────────────────────
 const { runAgent } = require('./src/agent');
 const { listDir } = require('./src/workspace');
+const ollama = require('./src/ollama');
 
 ipcMain.handle('getWorkspace', () => WORKSPACE);
 
@@ -89,14 +90,20 @@ ipcMain.handle('listDir', async (_, relPath = '.') =>
 
 ipcMain.handle('readFile', async (_, relPath) => {
   const full = path.resolve(WORKSPACE, relPath);
-  if (!full.startsWith(path.resolve(WORKSPACE)))
+  const wsBase = path.resolve(WORKSPACE);
+  const fullNorm = path.normalize(full).toLowerCase();
+  const baseNorm = path.normalize(wsBase).toLowerCase();
+  if (!fullNorm.startsWith(baseNorm + path.sep) && fullNorm !== baseNorm)
     throw new Error('Path outside workspace');
   return fs.readFile(full, 'utf8');
 });
 
 ipcMain.handle('writeFile', async (_, relPath, content) => {
   const full = path.resolve(WORKSPACE, relPath);
-  if (!full.startsWith(path.resolve(WORKSPACE)))
+  const wsBase = path.resolve(WORKSPACE);
+  const fullNorm = path.normalize(full).toLowerCase();
+  const baseNorm = path.normalize(wsBase).toLowerCase();
+  if (!fullNorm.startsWith(baseNorm + path.sep) && fullNorm !== baseNorm)
     throw new Error('Path outside workspace');
   await fs.mkdir(path.dirname(full), { recursive: true });
   await fs.writeFile(full, content, 'utf8');
@@ -110,7 +117,8 @@ ipcMain.handle('chat', async (_, messages) => {
     return Promise.resolve(null);
   }
   try {
-    await runAgent({ messages, workspace: WORKSPACE, sendEvent });
+    const model = process.env.LLAMAPILOT_MODEL || 'mistral:7b';
+    await runAgent({ messages, workspace: WORKSPACE, sendEvent, model });
   } catch (err) {
     mainWindow?.webContents.send('agent-event', {
       type: 'error',

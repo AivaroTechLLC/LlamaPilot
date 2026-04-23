@@ -47,7 +47,10 @@ async function walk(root, dir, indent, lines, limit) {
 
 async function listDir(relPath, workspace) {
   const abs = path.resolve(workspace, relPath);
-  if (!abs.startsWith(path.resolve(workspace)))
+  const wsBase = path.resolve(workspace);
+  const absNorm = path.normalize(abs).toLowerCase();
+  const baseNorm = path.normalize(wsBase).toLowerCase();
+  if (!absNorm.startsWith(baseNorm + path.sep) && absNorm !== baseNorm)
     throw new Error('Path outside workspace');
   const entries = await fs.readdir(abs, { withFileTypes: true });
   return entries

@@ -2,7 +2,12 @@
 const fetch = require('node-fetch');
 
 const BASE = process.env.OLLAMA_HOST || 'http://localhost:11434';
-const MODEL = process.env.LLAMAPILOT_MODEL || 'deepseek-coder';
+// Recommended models for code assistance (in order of preference):
+// - mistral:7b (32k context, good reasoning) ✓ Recommended
+// - neural-chat:7b (optimized for chat)
+// - deepseek-coder:6.7b or :33b (best for code)
+// - qwen2:7b or :14b (general coding)
+const MODEL = process.env.LLAMAPILOT_MODEL || 'mistral:7b';
 
 /** Non-streaming — returns full assistant content string */
 async function chat(messages, model = MODEL) {
