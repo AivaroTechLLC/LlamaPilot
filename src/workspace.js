@@ -58,7 +58,7 @@ async function listDir(relPath, workspace) {
     .map((e) => ({
       name: e.name,
       isDir: e.isDirectory(),
-      path: path.posix.join(relPath, e.name),
+      path: path.join(relPath, e.name).replace(/\\/g, '/'),
     }))
     .sort((a, b) => {
       if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;

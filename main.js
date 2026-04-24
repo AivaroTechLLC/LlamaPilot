@@ -3,11 +3,6 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 
-// WSL + headless GPU workarounds
-app.commandLine.appendSwitch('no-sandbox');
-app.commandLine.appendSwitch('disable-gpu-sandbox');
-app.commandLine.appendSwitch('disable-software-rasterizer');
-
 // ── Parse workspace ───────────────────────────────────────────────────────────
 function parseWorkspace() {
   const args = process.argv.slice(2);
@@ -59,7 +54,6 @@ function requestApproval(payload) {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     pendingApprovals.set(id, resolve);
     mainWindow?.webContents.send('approval-request', { id, ...payload });
-    // Auto-deny after 10 minutes
     setTimeout(() => {
       if (pendingApprovals.has(id)) {
         pendingApprovals.delete(id);
@@ -80,7 +74,6 @@ ipcMain.on('approval-response', (_, { id, approved }) => {
 // ── IPC handlers ──────────────────────────────────────────────────────────────
 const { runAgent } = require('./src/agent');
 const { listDir } = require('./src/workspace');
-const ollama = require('./src/ollama');
 
 ipcMain.handle('getWorkspace', () => WORKSPACE);
 
@@ -111,13 +104,13 @@ ipcMain.handle('writeFile', async (_, relPath, content) => {
 });
 
 ipcMain.handle('chat', async (_, messages) => {
+  const model = process.env.LLAMAPILOT_MODEL || 'deepseek-coder';
   function sendEvent(evt) {
     if (evt.type === 'request_approval') return requestApproval(evt);
     mainWindow?.webContents.send('agent-event', evt);
     return Promise.resolve(null);
   }
   try {
-    const model = process.env.LLAMAPILOT_MODEL || 'mistral:7b';
     await runAgent({ messages, workspace: WORKSPACE, sendEvent, model });
   } catch (err) {
     mainWindow?.webContents.send('agent-event', {
