@@ -8,7 +8,24 @@ async function chat(messages, model = MODEL) {
   const res = await fetch(`${BASE}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, messages, stream: false }),
+    body: JSON.stringify({
+      model,
+      messages,
+      stream: false,
+      options: {
+        temperature: 0.1, // low = more precise, less rambling
+        num_ctx: 8192, // enough for multi-file tasks
+        repeat_penalty: 1.1, // stops the model repeating itself
+        stop: [
+          // hard-stop tokens — kills social padding
+          '<|end|>',
+          '<tool_result>',
+          'Human:',
+          'User:',
+          'Assistant:',
+        ],
+      },
+    }),
   });
   if (!res.ok) throw new Error(`Ollama ${res.status}: ${await res.text()}`);
   const data = await res.json();
@@ -19,7 +36,16 @@ async function chatStream(messages, model = MODEL, onChunk) {
   const res = await fetch(`${BASE}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, messages, stream: true }),
+    body: JSON.stringify({
+      model,
+      messages,
+      stream: true,
+      options: {
+        temperature: 0.1,
+        num_ctx: 8192,
+        repeat_penalty: 1.1,
+      },
+    }),
   });
   if (!res.ok) throw new Error(`Ollama ${res.status}: ${await res.text()}`);
 

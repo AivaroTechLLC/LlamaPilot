@@ -1,4 +1,4 @@
-// My changes here...'use strict';
+'use strict';
 const { chat } = require('./ollama');
 const { getWorkspaceContext } = require('./workspace');
 const readFile = require('./tools/readFile');
@@ -10,107 +10,88 @@ const webSearch = require('./tools/webSearch');
 const MAX_TURNS = 16;
 const TOOL_RE = /<tool_call>([\s\S]*?)<\/tool_call>/;
 
+const ACTION_WORDS =
+  /\b(write|create|modify|generate|build|add|make|delete|run|execute|install|deploy|refactor|fix|change|update|implement)\b/i;
+
 function buildSystem(workspace, tree, model) {
-  return `You are LlamaPilot — an AI code executor. You are NOT just a text model. You MUST use tools to make real changes to files.
+  return `You are LlamaPilot — an AI code executor powered by ${model}. You are NOT just a text model. You MUST use tools to make real changes to files.
 
 ## Workspace
 Path: ${workspace}
 ${tree}
 
 ## CRITICAL: How to use tools
-When you need to take action (read, write, run, search), you MUST output a tool call on its own line.
-
-**MANDATORY TOOL CALL FORMAT:**
-On a separate line, write EXACTLY:
+When you need to take action, output a tool call on its own line using EXACTLY this format:
 <tool_call>{"tool":"TOOL_NAME","args":{"argName":"value"}}</tool_call>
-
-**EXAMPLES OF CORRECT OUTPUT:**
-
-Example 1 - Reading a file:
-I need to see the current code first.
-<tool_call>{"tool":"readFile","args":{"path":"src/index.js"}}</tool_call>
-
-Example 2 - Writing a file:
-Now I'll create the new config file.
-<tool_call>{"tool":"writeFile","args":{"path":"config.json","content":"{\\"name\\":\\"app\\"}"}}</tool_call>
-
-Example 3 - Running a command:
-Let me install dependencies.
-<tool_call>{"tool":"runShell","args":{"command":"npm install"}}</tool_call>
-
-Example 4 - Searching docs:
-<tool_call>{"tool":"webSearch","args":{"query":"Node.js async await"}}</tool_call>
 
 ## Available Tools
 
-**readFile** — Read a file to understand existing code
-  MUST call before editing a file
-  args: { "path": "relative/path/to/file" }
-  Example: {"tool":"readFile","args":{"path":"src/main.js"}}
+**readFile** — Read a file before editing it
+  args: { "path": "relative/path" }
 
-**writeFile** — Create or modify files (REQUIRED to apply changes)
-  You MUST use writeFile to apply every change—never skip this
-  Include the COMPLETE file content, no placeholders
-  args: { "path": "src/app.js", "content": "full file text here" }
-  Example: {"tool":"writeFile","args":{"path":"app.js","content":"console.log('hello');"}}
+**writeFile** — Create or overwrite a file (REQUIRED to apply all changes)
+  Write EXACTLY what the user asked for — nothing more.
+  If asked for console.log('hello world'), write console.log('hello world').
+  Do NOT add Express, classes, or extra structure unless explicitly asked.
+  args: { "path": "relative/path", "content": "complete file content" }
 
-**runShell** — Execute shell commands (user will approve)
-  Use for npm/git/build commands
+**runShell** — Run a shell command (user approval required)
   args: { "command": "npm install", "cwd": "optional/subdir" }
-  Example: {"tool":"runShell","args":{"command":"npm test"}}
 
-**deleteFile** — Permanently delete files (user will approve)
-  args: { "path": "src/old.js" }
-  Example: {"tool":"deleteFile","args":{"path":"unused.js"}}
+**deleteFile** — Delete a file permanently (user approval required)
+  args: { "path": "relative/path" }
 
-**webSearch** — Search for documentation or code examples
+**webSearch** — Search for docs, examples, best practices
   args: { "query": "search terms" }
-  Example: {"tool":"webSearch","args":{"query":"javascript promise"}}
 
-## RULES - MUST FOLLOW
+## Concrete examples
 
-1. **ALWAYS use tools.** Do not just explain what you would do—actually do it.
+Reading then writing:
+I'll read the file first to understand its structure.
+<tool_call>{"tool":"readFile","args":{"path":"src/index.js"}}</tool_call>
 
-2. **When asked to write/create/modify code:**
-   - First: readFile to see what exists (if file already exists)
-   - Then: writeFile with the COMPLETE new content
-   - Finally: Explain what changed
+Creating a new file:
+<tool_call>{"tool":"writeFile","args":{"path":"src/utils.js","content":"'use strict';\n\nmodule.exports = {};"}}</tool_call>
 
-3. **When editing an existing file:**
-   - ALWAYS readFile first to understand context
-   - Write the ENTIRE file content to writeFile
-   - Never say "just add these lines" without actually writing
+Running a command:
+<tool_call>{"tool":"runShell","args":{"command":"npm test"}}</tool_call>
 
-4. **Complete file contents:**
-   - writeFile must contain 100% of the file
-   - Never use placeholders like "// ... rest ..."
-   - Never say "keep the existing code and add..."
+Searching for docs:
+<tool_call>{"tool":"webSearch","args":{"query":"node.js fs promises readFile"}}</tool_call>
 
-5. **One action per tool call:**
-   - Output one <tool_call> block per message
-   - Wait for result before next tool
+## Rules
 
-6. **After tool execution:**
-   - Summarize what the tool did
-   - Explain the result
-   - Ask for next steps if needed
-
-## You are NOT just explaining—you are EXECUTING`;
+1. ALWAYS use tools — never just describe what you would do, actually do it.
+2. Always readFile BEFORE editing an existing file.
+3. writeFile must contain 100% of the file — no placeholders like "// rest of file".
+4. One <tool_call> per message — wait for the result before the next action.
+5. After finishing, list every file created or modified in a summary.
+6. Destructive actions (runShell, deleteFile) will show the user an approval dialog.`;
 }
 
 async function runAgent({ messages, workspace, sendEvent, model }) {
   const usedModel = model || process.env.LLAMAPILOT_MODEL || 'deepseek-coder';
   const tree = await getWorkspaceContext(workspace);
+
+  // Capture the user's original request before we mutate conv
+  const originalUserMsg =
+    [...messages].reverse().find((m) => m.role === 'user')?.content || '';
+  const userWantsAction = ACTION_WORDS.test(originalUserMsg);
+
   const conv = [
     { role: 'system', content: buildSystem(workspace, tree, usedModel) },
     ...messages,
   ];
+
+  // Show a thinking indicator immediately so the UI doesn't look frozen
+  sendEvent({ type: 'thinking_start' });
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     let raw;
     try {
       raw = await chat(conv, usedModel);
     } catch (err) {
+      sendEvent({ type: 'thinking_done' });
       sendEvent({
         type: 'error',
         content: `Ollama error: ${err.message}\n\nMake sure Ollama is running and the model is pulled:\n  ollama pull ${usedModel}`,
@@ -119,6 +100,7 @@ async function runAgent({ messages, workspace, sendEvent, model }) {
     }
 
     if (!raw || !raw.trim()) {
+      sendEvent({ type: 'thinking_done' });
       sendEvent({
         type: 'error',
         content: 'Model returned an empty response. Try again.',
@@ -129,31 +111,22 @@ async function runAgent({ messages, workspace, sendEvent, model }) {
     const match = TOOL_RE.exec(raw);
 
     if (!match) {
-      // Check if this looks like the model is just explaining instead of executing
-      const lastMsg = conv[conv.length - 1]?.content || '';
-      const userAskedForAction =
-        /\b(write|create|modify|generate|build|add|make|delete|run|execute|install|deploy|refactor|fix|change|update)\b/i.test(
-          lastMsg,
-        );
-
-      if (userAskedForAction && turn < 2) {
-        // Model should have used a tool but didn't — re-prompt it
-        sendEvent({
-          type: 'agent_text',
-          content:
-            "⚠️ You described the action but didn't execute it. Use the tool format shown in your instructions.\n",
-        });
+      // Model gave a text response — check if it should have used a tool instead
+      if (userWantsAction && turn === 0) {
+        // Re-prompt once firmly
         conv.push({ role: 'assistant', content: raw });
         conv.push({
           role: 'user',
-          content: `You described what to do but didn't execute it. The user asked you to actually ${lastMsg.match(/\b(write|create|modify|generate|build|add|make|delete|run|execute|install|deploy|refactor|fix|change|update)\b/i)?.[0] || 'do something'}. Use the tool format: <tool_call>{"tool":"...","args":{...}}</tool_call>`,
+          content: `You described what to do but didn't actually do it. Use a tool call now:\n<tool_call>{"tool":"writeFile","args":{"path":"...","content":"..."}}</tool_call>\n\nDo not explain further — execute the action.`,
         });
         continue;
       }
 
-      // Final response — stream word by word to the UI
+      // Legitimate final response
+      sendEvent({ type: 'thinking_done' });
+      const cleaned = stripPadding(raw);
       sendEvent({ type: 'stream_start' });
-      const tokens = raw.split(/(?<=\s)|(?=\s)/);
+      const tokens = cleaned.split(/(?<=\s)|(?=\s)/);
       for (const tok of tokens) {
         sendEvent({ type: 'stream_chunk', content: tok });
         await sleep(4);
@@ -162,20 +135,21 @@ async function runAgent({ messages, workspace, sendEvent, model }) {
       return;
     }
 
-    // Show any reasoning text that appeared before the tool call tag
-    const before = raw.slice(0, match.index).trim();
-    if (before) {
-      sendEvent({ type: 'agent_text', content: before });
-    }
+    // Show thinking done on first tool use
+    if (turn === 0) sendEvent({ type: 'thinking_done' });
 
-    // Parse tool call JSON
+    // Show reasoning text before the tool call
+    const before = raw.slice(0, match.index).trim();
+    if (before) sendEvent({ type: 'agent_text', content: before });
+
+    // Parse tool JSON
     let call;
     try {
       call = JSON.parse(match[1].trim());
     } catch {
       sendEvent({
         type: 'error',
-        content: `Model produced malformed tool JSON:\n${match[1]}\n\nRetrying may help.`,
+        content: `Malformed tool JSON:\n${match[1]}`,
       });
       return;
     }
@@ -194,56 +168,65 @@ async function runAgent({ messages, workspace, sendEvent, model }) {
     try {
       result = await dispatch(call.tool, call.args || {}, workspace, sendEvent);
     } catch (err) {
-      result = `Error executing ${call.tool}: ${err.message}`;
+      result = `Error: ${err.message}`;
     }
 
     sendEvent({ type: 'tool_done', tool: call.tool, result });
 
-    // Feed result back and loop
+    // Notify UI to refresh file tree if we wrote or deleted something
+    if (call.tool === 'writeFile' || call.tool === 'deleteFile') {
+      sendEvent({ type: 'refresh_tree' });
+    }
+
     conv.push({ role: 'assistant', content: raw });
     conv.push({
       role: 'user',
-      content: `<tool_result tool="${call.tool}">\n${result}\n</tool_result>\n\nContinue with the task.`,
+      content: `TOOL RESULT [${call.tool}]:\n${result}\n\nNext action:`,
     });
   }
 
+  sendEvent({ type: 'thinking_done' });
   sendEvent({
     type: 'error',
-    content: `Reached the maximum of ${MAX_TURNS} steps without finishing. Try breaking the task into smaller pieces.`,
+    content: `Reached the maximum of ${MAX_TURNS} steps. Try breaking this into smaller tasks.`,
   });
 }
 
 async function dispatch(tool, args, workspace, sendEvent) {
   switch (tool) {
     case 'readFile':
-      if (!args.path) throw new Error('readFile requires a path argument');
+      if (!args.path) throw new Error('readFile requires a path');
       return readFile(args.path, workspace);
-
     case 'writeFile':
-      if (!args.path) throw new Error('writeFile requires a path argument');
-      if (!args.content && args.content !== '')
-        throw new Error('writeFile requires a content argument');
+      if (!args.path) throw new Error('writeFile requires a path');
+      if (args.content === undefined)
+        throw new Error('writeFile requires content');
       return writeFile(args.path, args.content, workspace);
-
     case 'runShell':
-      if (!args.command)
-        throw new Error('runShell requires a command argument');
+      if (!args.command) throw new Error('runShell requires a command');
       return runShell(args.command, workspace, args.cwd, sendEvent);
-
     case 'deleteFile':
-      if (!args.path) throw new Error('deleteFile requires a path argument');
+      if (!args.path) throw new Error('deleteFile requires a path');
       return deleteFile(args.path, workspace, sendEvent);
-
     case 'webSearch':
-      if (!args.query) throw new Error('webSearch requires a query argument');
+      if (!args.query) throw new Error('webSearch requires a query');
       return webSearch(args.query);
-
     default:
       throw new Error(
-        `Unknown tool "${tool}". Valid tools: readFile, writeFile, runShell, deleteFile, webSearch`,
+        `Unknown tool "${tool}". Valid: readFile, writeFile, runShell, deleteFile, webSearch`,
       );
   }
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 module.exports = { runAgent };
+// Strips social filler the model sometimes prepends to responses
+function stripPadding(text) {
+  return text
+    .replace(/^(thank you[\s\S]{0,120}?\n)/i, '')
+    .replace(/^(great[!,][\s\S]{0,120}?\n)/i, '')
+    .replace(/^(of course[!,][\s\S]{0,80}?\n)/i, '')
+    .replace(/^(sure[!,][\s\S]{0,80}?\n)/i, '')
+    .replace(/^(i('ve| have) (created|written|added|updated)[\s\S]{0,200}?\n\n)/i, '')
+    .trim();
+}
