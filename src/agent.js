@@ -1,14 +1,14 @@
 // My changes here...'use strict';
-const { chat }                = require('./ollama');
+const { chat } = require('./ollama');
 const { getWorkspaceContext } = require('./workspace');
-const readFile                = require('./tools/readFile');
-const writeFile               = require('./tools/writeFile');
-const runShell                = require('./tools/runShell');
-const deleteFile              = require('./tools/deleteFile');
-const webSearch               = require('./tools/webSearch');
+const readFile = require('./tools/readFile');
+const writeFile = require('./tools/writeFile');
+const runShell = require('./tools/runShell');
+const deleteFile = require('./tools/deleteFile');
+const webSearch = require('./tools/webSearch');
 
 const MAX_TURNS = 16;
-const TOOL_RE   = /<tool_call>([\s\S]*?)<\/tool_call>/;
+const TOOL_RE = /<tool_call>([\s\S]*?)<\/tool_call>/;
 
 function buildSystem(workspace, tree, model) {
   return `You are LlamaPilot — an AI code executor. You are NOT just a text model. You MUST use tools to make real changes to files.
@@ -111,12 +111,18 @@ async function runAgent({ messages, workspace, sendEvent, model }) {
     try {
       raw = await chat(conv, usedModel);
     } catch (err) {
-      sendEvent({ type: 'error', content: `Ollama error: ${err.message}\n\nMake sure Ollama is running and the model is pulled:\n  ollama pull ${usedModel}` });
+      sendEvent({
+        type: 'error',
+        content: `Ollama error: ${err.message}\n\nMake sure Ollama is running and the model is pulled:\n  ollama pull ${usedModel}`,
+      });
       return;
     }
 
     if (!raw || !raw.trim()) {
-      sendEvent({ type: 'error', content: 'Model returned an empty response. Try again.' });
+      sendEvent({
+        type: 'error',
+        content: 'Model returned an empty response. Try again.',
+      });
       return;
     }
 
@@ -125,13 +131,17 @@ async function runAgent({ messages, workspace, sendEvent, model }) {
     if (!match) {
       // Check if this looks like the model is just explaining instead of executing
       const lastMsg = conv[conv.length - 1]?.content || '';
-      const userAskedForAction = /\b(write|create|modify|generate|build|add|make|delete|run|execute|install|deploy|refactor|fix|change|update)\b/i.test(lastMsg);
-      
+      const userAskedForAction =
+        /\b(write|create|modify|generate|build|add|make|delete|run|execute|install|deploy|refactor|fix|change|update)\b/i.test(
+          lastMsg,
+        );
+
       if (userAskedForAction && turn < 2) {
         // Model should have used a tool but didn't — re-prompt it
-        sendEvent({ 
-          type: 'agent_text', 
-          content: '⚠️ You described the action but didn\'t execute it. Use the tool format shown in your instructions.\n' 
+        sendEvent({
+          type: 'agent_text',
+          content:
+            "⚠️ You described the action but didn't execute it. Use the tool format shown in your instructions.\n",
         });
         conv.push({ role: 'assistant', content: raw });
         conv.push({
@@ -163,12 +173,18 @@ async function runAgent({ messages, workspace, sendEvent, model }) {
     try {
       call = JSON.parse(match[1].trim());
     } catch {
-      sendEvent({ type: 'error', content: `Model produced malformed tool JSON:\n${match[1]}\n\nRetrying may help.` });
+      sendEvent({
+        type: 'error',
+        content: `Model produced malformed tool JSON:\n${match[1]}\n\nRetrying may help.`,
+      });
       return;
     }
 
     if (!call.tool) {
-      sendEvent({ type: 'error', content: 'Model returned a tool call with no tool name.' });
+      sendEvent({
+        type: 'error',
+        content: 'Model returned a tool call with no tool name.',
+      });
       return;
     }
 
@@ -191,7 +207,10 @@ async function runAgent({ messages, workspace, sendEvent, model }) {
     });
   }
 
-  sendEvent({ type: 'error', content: `Reached the maximum of ${MAX_TURNS} steps without finishing. Try breaking the task into smaller pieces.` });
+  sendEvent({
+    type: 'error',
+    content: `Reached the maximum of ${MAX_TURNS} steps without finishing. Try breaking the task into smaller pieces.`,
+  });
 }
 
 async function dispatch(tool, args, workspace, sendEvent) {
@@ -201,12 +220,14 @@ async function dispatch(tool, args, workspace, sendEvent) {
       return readFile(args.path, workspace);
 
     case 'writeFile':
-      if (!args.path)    throw new Error('writeFile requires a path argument');
-      if (!args.content && args.content !== '') throw new Error('writeFile requires a content argument');
+      if (!args.path) throw new Error('writeFile requires a path argument');
+      if (!args.content && args.content !== '')
+        throw new Error('writeFile requires a content argument');
       return writeFile(args.path, args.content, workspace);
 
     case 'runShell':
-      if (!args.command) throw new Error('runShell requires a command argument');
+      if (!args.command)
+        throw new Error('runShell requires a command argument');
       return runShell(args.command, workspace, args.cwd, sendEvent);
 
     case 'deleteFile':
@@ -218,7 +239,9 @@ async function dispatch(tool, args, workspace, sendEvent) {
       return webSearch(args.query);
 
     default:
-      throw new Error(`Unknown tool "${tool}". Valid tools: readFile, writeFile, runShell, deleteFile, webSearch`);
+      throw new Error(
+        `Unknown tool "${tool}". Valid tools: readFile, writeFile, runShell, deleteFile, webSearch`,
+      );
   }
 }
 
